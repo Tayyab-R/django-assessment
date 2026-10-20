@@ -1,0 +1,15 @@
+# Python / Django
+.venv/
+venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Raw data too big or not needed (stations.json and places.json ARE committed)
+backend/app/data/US.txt
