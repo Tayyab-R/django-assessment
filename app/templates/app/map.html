@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fuel route</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+    body { display: flex; }
+    #panel { width: 340px; padding: 16px; overflow-y: auto; box-sizing: border-box; border-right: 1px solid #ddd; }
+    #map { flex: 1; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .stat { display: flex; justify-content: space-between; padding: 4px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+    th, td { text-align: left; padding: 4px 2px; border-bottom: 1px solid #eee; }
+    .note { font-size: 12px; color: #666; margin-top: 12px; }
+    @media (max-width: 700px) { body { flex-direction: column-reverse; } #panel { width: auto; max-height: 40%; border-right: 0; } }
+  </style>
+</head>
+<body>
+  <div id="panel"></div>
+  <div id="map"></div>
+  {{ data|json_script:"trip-data" }}
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script>
+    const data = JSON.parse(document.getElementById("trip-data").textContent);
+    const panel = document.getElementById("panel");
+
+    function el(tag, text, parent) {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+    function stat(label, value) {
+      const row = el("div", undefined, panel); row.className = "stat";
+      el("span", label, row); el("strong", value, row);
+    }
+
+    el("h1", data.start.input + " \u2192 " + data.finish.input, panel);
+    stat("Distance", data.total_miles.toLocaleString() + " mi");
+    if (data.duration_hours) stat("Drive time", data.duration_hours + " h");
+    stat("Fuel cost (at stops)", "$" + data.fuel.total_cost.toFixed(2));
+    stat("Gallons bought", data.fuel.gallons_purchased.toFixed(1));
+    stat("Trip needs", data.fuel.trip_gallons.toFixed(1) + " gal");
+
+    const table = el("table", undefined, panel);
+    const head = el("tr", undefined, table);
+    ["#", "Mile", "$/gal", "Gal", "Cost"].forEach(h => el("th", h, head));
+    data.fuel.stops.forEach((s, i) => {
+      const tr = el("tr", undefined, table);
+      [i + 1, Math.round(s.mile), s.price_per_gallon.toFixed(3), s.gallons.toFixed(1), "$" + s.cost.toFixed(2)]
+        .forEach(v => el("td", String(v), tr));
+    });
+    el("p", data.assumptions.starting_fuel + ". Station positions are city-level, so approximate.", panel).className = "note";
+
+    const map = L.map("map");
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const path = data.route.coordinates.map(c => [c[1], c[0]]);   // GeoJSON is [lng, lat]
+    const line = L.polyline(path, { color: "#2563eb", weight: 4 }).addTo(map);
+    map.fitBounds(line.getBounds(), { padding: [30, 30] });
+
+    function dot(latlng, color, radius, title) {
+      return L.circleMarker(latlng, { radius, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 })
+        .bindPopup(title).addTo(map);
+    }
+    dot([data.start.lat, data.start.lng], "#16a34a", 9, "Start: " + data.start.input);
+    dot([data.finish.lat, data.finish.lng], "#dc2626", 9, "Finish: " + data.finish.input);
+    data.fuel.stops.forEach((s, i) => {
+      const box = el("div");
+      el("strong", (i + 1) + ". " + s.name, box);
+      el("div", s.city + ", " + s.state + " \u2014 mile " + Math.round(s.mile), box);
+      el("div", s.gallons.toFixed(1) + " gal @ $" + s.price_per_gallon.toFixed(3) + " = $" + s.cost.toFixed(2), box);
+      dot([s.lat, s.lng], "#f59e0b", 7, box);
+    });
+  </script>
+</body>
+</html>
