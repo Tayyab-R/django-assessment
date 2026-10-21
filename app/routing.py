@@ -1,12 +1,15 @@
 """Module 3b: the single outside API call (OpenRouteService directions)."""
+import os
 from dataclasses import dataclass
 
 import numpy as np
 import requests
-from django.conf import settings
 
 ORS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
 METERS_PER_MILE = 1609.344
+REQUEST_TIMEOUT = (5, 25)            # (connect, read) seconds
+RETRY_STATUSES = {502, 503, 504}     # the service is struggling, worth one more try
+MAX_ATTEMPTS = 2                     # a retry only happens after a failure
 EARTH_RADIUS_MILES = 3958.8
 
 
@@ -50,10 +53,31 @@ def build_route(coords_lng_lat, total_meters, duration_seconds=None) -> Route:
     return Route(lat, lng, cum, float(total_miles), hours)
 
 
+def _post_with_retry(body: dict, headers: dict) -> requests.Response:
+    """POST to ORS. Retries once on a timeout, connection error or 502/503/504.
+
+    A normal request still makes exactly one call; the retry only happens after
+    a failure. Client errors (bad key, quota, bad input) are never retried.
+    """
+    last_error = "unknown error"
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            resp = requests.post(ORS_URL, json=body, headers=headers, timeout=REQUEST_TIMEOUT)
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_error = str(exc)
+            continue
+        if resp.status_code in RETRY_STATUSES and attempt < MAX_ATTEMPTS:
+            last_error = f"status {resp.status_code}"
+            continue
+        return resp
+    raise RoutingError(
+        f"Could not reach the routing service after {MAX_ATTEMPTS} attempts: {last_error}"
+    )
+
+
 def get_route(start: tuple[float, float], end: tuple[float, float], api_key: str | None = None) -> Route:
     """ONE call to the routing API. start/end are (lat, lng)."""
-
-    api_key = api_key or settings.ORS_API_KEY
+    api_key = api_key or os.environ.get("ORS_API_KEY")
     if not api_key:
         raise RoutingError("ORS_API_KEY is not set.")
 
@@ -64,16 +88,7 @@ def get_route(start: tuple[float, float], end: tuple[float, float], api_key: str
         # at any distance, instead of failing beyond the default 350 m.
         "radiuses": [-1, -1],
     }
-    try:
-        resp = requests.post(
-            ORS_URL,
-            json=body,
-            headers={"Authorization": api_key, "Content-Type": "application/json"},
-            timeout=20,
-        )
-    except requests.RequestException as exc:
-        raise RoutingError(f"Could not reach the routing service: {exc}") from exc
-
+    resp = _post_with_retry(body, {"Authorization": api_key, "Content-Type": "application/json"})
     if resp.status_code != 200:
         raise RoutingError(f"Routing service returned {resp.status_code}: {resp.text[:200]}")
 
