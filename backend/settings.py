@@ -32,7 +32,7 @@ load_dotenv(BASE_DIR / '.env')
 ORS_API_KEY = os.environ.get('ORS_API_KEY')
 
 ALLOWED_HOSTS = []
-
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # Application definition
 
