@@ -1,10 +1,11 @@
-""" load stations.json once and keep it in memory as numpy arrays."""
+"""load stations.json once and keep it in memory as numpy arrays."""
 import json
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial import cKDTree
 
 EARTH_RADIUS_MILES = 3958.8
 
@@ -31,6 +32,7 @@ class Stations:
     lng: np.ndarray
     price: np.ndarray
     xyz: np.ndarray    # shape (n, 3), miles
+    tree: cKDTree      # built once; answers 'which stations are near this point?'
 
 
 def _default_path() -> Path:
@@ -49,4 +51,5 @@ def load_stations(path: Path | None = None) -> Stations:
     lat = np.array([r["lat"] for r in records], dtype=float)
     lng = np.array([r["lng"] for r in records], dtype=float)
     price = np.array([r["price"] for r in records], dtype=float)
-    return Stations(records, lat, lng, price, to_xyz(lat, lng))
+    xyz = to_xyz(lat, lng)
+    return Stations(records, lat, lng, price, xyz, cKDTree(xyz))
