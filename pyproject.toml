@@ -8,5 +8,7 @@ dependencies = [
    "django",
    "numpy",
    "pandas>=2.3.3",
+   "python-dotenv>=1.2.4",
    "scipy",
+   "requests>=2.34.2"
 ]
